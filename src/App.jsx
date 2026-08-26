@@ -7,7 +7,7 @@ import { basicItems, evaluationItems } from './data/evaluationItems.js';
 import { createEvaluationExcelBlob, downloadExcelBlob } from './services/excelService.js';
 import { clearDraft, formatSavedAt, loadDraft, saveDraft } from './utils/draftStorage.js';
 import { getItemScore, getUnevaluatedItems, isAnswered } from './utils/scoring.js';
-import { shareEvaluationExcel } from './utils/shareUtils.js';
+import { createEvaluationMailtoHref, createShareFile, tryShareExcel } from './utils/shareUtils.js';
 
 const initialProjectInfo = {
   projectName: '',
@@ -60,6 +60,7 @@ export default function App() {
   });
   const [answers, setAnswers] = useState(restoredDraft?.evaluationResults ?? {});
   const [notice, setNotice] = useState(restoredDraft ? '임시저장 데이터가 복원되었습니다.' : '');
+  const [mailFallback, setMailFallback] = useState(null);
   const [lastSavedAt, setLastSavedAt] = useState(restoredDraft?.lastSavedAt ?? '');
   const [excelAction, setExcelAction] = useState('');
   const [isProjectInfoOpen, setIsProjectInfoOpen] = useState(true);
@@ -93,6 +94,12 @@ export default function App() {
       [item.id]: value,
     }));
     setNotice('');
+    setMailFallback(null);
+  };
+
+  const handleProjectInfoChange = (nextProjectInfo) => {
+    setProjectInfo(nextProjectInfo);
+    setMailFallback(null);
   };
 
   const toggleSection = (category) => {
@@ -154,6 +161,7 @@ export default function App() {
     setProjectInfo(initialProjectInfo);
     setAnswers({});
     setLastSavedAt('');
+    setMailFallback(null);
     setIsProjectInfoOpen(true);
     setOpenSections(initialOpenSections);
     setNotice('새 평가가 시작되었습니다.');
@@ -198,6 +206,7 @@ export default function App() {
 
     setExcelAction('download');
     setNotice('평가표 생성 중...');
+    setMailFallback(null);
 
     try {
       const excel = await createExcelForAction();
@@ -218,31 +227,67 @@ export default function App() {
 
     setExcelAction('share');
     setNotice('평가표 생성 중...');
+    setMailFallback(null);
 
     let excel;
 
     try {
       excel = await createExcelForAction();
-      const shareResult = await shareEvaluationExcel({
-        blob: excel.blob,
-        fileName: excel.fileName,
-        projectInfo,
-        totalScore: scores.totalScore,
-      });
+      let excelFile;
 
-      if (shareResult.shared) {
-        setNotice('공유 메뉴를 열었습니다.');
-        return;
-      }
+      try {
+        excelFile = createShareFile(excel.blob, excel.fileName);
+      } catch (fileError) {
+        console.error('Failed to create Excel File object.', {
+          name: fileError?.name,
+          message: fileError?.message,
+          stack: fileError?.stack,
+        });
 
-      if (shareResult.cancelled) {
+        downloadExcelBlob(excel.blob, excel.fileName);
+        setMailFallback({
+          fileName: excel.fileName,
+          fileSize: excel.size,
+          status: 'unsupported',
+          reason: 'file-api-unavailable',
+          mailtoHref: createEvaluationMailtoHref({
+            projectInfo,
+            totalScore: scores.totalScore,
+          }),
+        });
         setNotice('');
         return;
       }
 
-      setNotice(shareResult.reason === 'unsupported'
-        ? '이 브라우저에서는 Excel 파일 공유를 지원하지 않습니다. 아래의 Excel만 다운로드 버튼을 사용해주세요.'
-        : '메일 앱으로 파일을 전달하지 못했습니다. 다시 시도하거나 아래의 Excel만 다운로드 버튼을 사용해주세요.');
+      const shareResult = await tryShareExcel({
+        file: excelFile,
+        projectInfo,
+        totalScore: scores.totalScore,
+      });
+
+      if (shareResult.status === 'shared') {
+        setNotice('공유 메뉴를 열었습니다.');
+        return;
+      }
+
+      if (shareResult.status === 'cancelled') {
+        setNotice('');
+        return;
+      }
+
+      downloadExcelBlob(excel.blob, excel.fileName);
+      setMailFallback({
+        fileName: excel.fileName,
+        fileSize: excel.size,
+        status: shareResult.status,
+        reason: shareResult.reason,
+        diagnostics: shareResult.diagnostics,
+        mailtoHref: createEvaluationMailtoHref({
+          projectInfo,
+          totalScore: scores.totalScore,
+        }),
+      });
+      setNotice('');
     } catch (error) {
       console.error(error);
 
@@ -250,10 +295,15 @@ export default function App() {
 
       setNotice(errorMessage.startsWith('Template load failed')
         ? 'Excel 템플릿 파일을 불러오지 못했습니다.'
-        : '파일 공유 중 오류가 발생했습니다. 다시 시도하거나 아래의 Excel만 다운로드 버튼을 사용해주세요.');
+        : '시공평가표 생성 중 오류가 발생했습니다.');
     } finally {
       setExcelAction('');
     }
+  };
+
+  const openMailComposer = () => {
+    if (!mailFallback?.mailtoHref) return;
+    window.location.href = mailFallback.mailtoHref;
   };
 
   return (
@@ -298,7 +348,7 @@ export default function App() {
           </button>
           {isProjectInfoOpen && (
             <div id="project-info-panel">
-              <ProjectInfoForm value={projectInfo} onChange={setProjectInfo} />
+              <ProjectInfoForm value={projectInfo} onChange={handleProjectInfoChange} />
             </div>
           )}
         </section>
@@ -319,6 +369,20 @@ export default function App() {
 
         <div className="actions">
           {notice && <p className="notice">{notice}</p>}
+          {mailFallback && (
+            <div className="mail-fallback-card" role="status">
+              <strong>Excel 파일을 저장했습니다.</strong>
+              <p>
+                이 기기에서는 Excel 파일을 메일앱에 자동 첨부할 수 없습니다.
+                메일 앱이 열리면 방금 저장한 시공평가표를 첨부해주세요.
+              </p>
+              <button type="button" onClick={openMailComposer}>
+                <AppIcon name="mail" />
+                메일 작성 열기
+              </button>
+              <small>{mailFallback.fileName}</small>
+            </div>
+          )}
           <button
             type="button"
             className="primary-button"
