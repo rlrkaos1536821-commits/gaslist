@@ -35,6 +35,8 @@ const requiredProjectFields = [
   ['manager', '시공관리자'],
 ];
 
+const THEME_STORAGE_KEY = 'constructionEvaluationTheme';
+
 function groupItemsByCategory(items) {
   return categoryOrder.map((category) => ({
     category,
@@ -43,6 +45,14 @@ function groupItemsByCategory(items) {
 }
 
 export default function App() {
+  const [theme, setTheme] = useState(() => {
+    try {
+      return localStorage.getItem(THEME_STORAGE_KEY) === 'dark' ? 'dark' : 'light';
+    } catch (error) {
+      console.error('Failed to load theme.', error);
+      return 'light';
+    }
+  });
   const [restoredDraft] = useState(() => loadDraft());
   const [projectInfo, setProjectInfo] = useState({
     ...initialProjectInfo,
@@ -60,6 +70,7 @@ export default function App() {
   const groupedItems = useMemo(() => groupItemsByCategory(evaluationItems), []);
 
   const getScore = (item) => getItemScore(item, answers[item.id]);
+  const isDarkMode = theme === 'dark';
 
   const scores = useMemo(() => {
     const basicScore = basicItems.reduce((sum, item) => sum + getItemScore(item, answers[item.id]), 0);
@@ -97,6 +108,16 @@ export default function App() {
       [category]: true,
     }));
   };
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch (error) {
+      console.error('Failed to save theme.', error);
+    }
+  }, [theme]);
 
   useEffect(() => {
     if (!didMountRef.current) {
@@ -244,9 +265,15 @@ export default function App() {
           <p>전북ES</p>
           <h1>시공평가</h1>
         </div>
-        <span className="header-alert">
-          <AppIcon name="bell" />
-        </span>
+        <button
+          type="button"
+          className="theme-toggle"
+          aria-label={isDarkMode ? '라이트모드로 전환' : '다크모드로 전환'}
+          aria-pressed={isDarkMode}
+          onClick={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
+        >
+          <AppIcon name={isDarkMode ? 'sun' : 'moon'} />
+        </button>
       </header>
 
       <main>
