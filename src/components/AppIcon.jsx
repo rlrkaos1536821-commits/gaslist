@@ -106,6 +106,12 @@ const paths = {
   chevronRight: (
     <path d="m10 7 5 5-5 5" />
   ),
+  x: (
+    <>
+      <path d="M6 6l12 12" />
+      <path d="M18 6 6 18" />
+    </>
+  ),
 };
 
 export default function AppIcon({ name, className = '' }) {

@@ -240,19 +240,17 @@ export default function App() {
         return;
       }
 
-      downloadExcelBlob(excel.blob, excel.fileName);
-      setNotice('이 브라우저에서는 파일 공유를 지원하지 않습니다. Excel 파일을 다운로드합니다.');
+      setNotice(shareResult.reason === 'unsupported'
+        ? '이 브라우저에서는 Excel 파일 공유를 지원하지 않습니다. 아래의 Excel만 다운로드 버튼을 사용해주세요.'
+        : '메일 앱으로 파일을 전달하지 못했습니다. 다시 시도하거나 아래의 Excel만 다운로드 버튼을 사용해주세요.');
     } catch (error) {
       console.error(error);
 
-      if (excel) {
-        downloadExcelBlob(excel.blob, excel.fileName);
-        setNotice('파일 공유 중 오류가 발생했습니다. Excel 파일을 다운로드합니다.');
-      } else {
-        setNotice(error.message.startsWith('Template load failed')
-          ? 'Excel 템플릿 파일을 불러오지 못했습니다.'
-          : '시공평가표 생성 중 오류가 발생했습니다.');
-      }
+      const errorMessage = String(error?.message || '');
+
+      setNotice(errorMessage.startsWith('Template load failed')
+        ? 'Excel 템플릿 파일을 불러오지 못했습니다.'
+        : '파일 공유 중 오류가 발생했습니다. 다시 시도하거나 아래의 Excel만 다운로드 버튼을 사용해주세요.');
     } finally {
       setExcelAction('');
     }

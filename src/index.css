@@ -1164,38 +1164,44 @@ main {
   margin-top: 12px;
 }
 
-.number-input div {
+.number-input > div {
   display: grid;
   grid-template-columns: 1fr 42px;
   align-items: center;
   gap: 8px;
 }
 
+.number-input.tone-high .number-picker-trigger,
 .number-input.tone-high input {
   border-color: rgba(37, 99, 235, 0.42);
   background: linear-gradient(135deg, var(--score-high-soft), rgba(255, 255, 255, 0.84));
 }
 
+:root[data-theme='dark'] .number-input.tone-high .number-picker-trigger,
 :root[data-theme='dark'] .number-input.tone-high input {
   border-color: rgba(96, 165, 250, 0.42);
   background: linear-gradient(135deg, rgba(96, 165, 250, 0.18), rgba(15, 23, 42, 0.84));
 }
 
+.number-input.tone-middle .number-picker-trigger,
 .number-input.tone-middle input {
   border-color: rgba(245, 158, 11, 0.42);
   background: linear-gradient(135deg, var(--score-middle-soft), rgba(255, 255, 255, 0.84));
 }
 
+:root[data-theme='dark'] .number-input.tone-middle .number-picker-trigger,
 :root[data-theme='dark'] .number-input.tone-middle input {
   border-color: rgba(251, 191, 36, 0.42);
   background: linear-gradient(135deg, rgba(251, 191, 36, 0.18), rgba(15, 23, 42, 0.84));
 }
 
+.number-input.tone-low .number-picker-trigger,
 .number-input.tone-low input {
   border-color: rgba(239, 68, 68, 0.42);
   background: linear-gradient(135deg, var(--score-low-soft), rgba(255, 255, 255, 0.84));
 }
 
+:root[data-theme='dark'] .number-input.tone-low .number-picker-trigger,
 :root[data-theme='dark'] .number-input.tone-low input {
   border-color: rgba(251, 113, 133, 0.42);
   background: linear-gradient(135deg, rgba(251, 113, 133, 0.18), rgba(15, 23, 42, 0.84));
@@ -1206,6 +1212,202 @@ main {
   font-style: normal;
   font-weight: 800;
   text-align: center;
+}
+
+.number-picker-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0 13px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.68);
+  text-align: left;
+  box-shadow: inset 0 1px 2px rgba(38, 78, 140, 0.04);
+}
+
+:root[data-theme='dark'] .number-picker-trigger {
+  border-color: rgba(148, 163, 184, 0.22);
+  background: rgba(15, 23, 42, 0.84);
+}
+
+.number-input.tone-high .number-picker-trigger {
+  border-color: rgba(37, 99, 235, 0.42);
+  background: linear-gradient(135deg, var(--score-high-soft), rgba(255, 255, 255, 0.84));
+}
+
+.number-input.tone-middle .number-picker-trigger {
+  border-color: rgba(245, 158, 11, 0.42);
+  background: linear-gradient(135deg, var(--score-middle-soft), rgba(255, 255, 255, 0.84));
+}
+
+.number-input.tone-low .number-picker-trigger {
+  border-color: rgba(239, 68, 68, 0.42);
+  background: linear-gradient(135deg, var(--score-low-soft), rgba(255, 255, 255, 0.84));
+}
+
+:root[data-theme='dark'] .number-input.tone-high .number-picker-trigger {
+  border-color: rgba(96, 165, 250, 0.42);
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.18), rgba(15, 23, 42, 0.84));
+}
+
+:root[data-theme='dark'] .number-input.tone-middle .number-picker-trigger {
+  border-color: rgba(251, 191, 36, 0.42);
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.18), rgba(15, 23, 42, 0.84));
+}
+
+:root[data-theme='dark'] .number-input.tone-low .number-picker-trigger {
+  border-color: rgba(251, 113, 133, 0.42);
+  background: linear-gradient(135deg, rgba(251, 113, 133, 0.18), rgba(15, 23, 42, 0.84));
+}
+
+.number-picker-trigger strong {
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.number-picker-trigger:not(.has-value) strong {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.number-picker-trigger svg {
+  width: 18px;
+  height: 18px;
+  color: var(--muted);
+}
+
+.number-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  align-items: end;
+  padding: 16px;
+  background: rgba(15, 23, 42, 0.34);
+  backdrop-filter: blur(8px);
+}
+
+.number-picker {
+  display: grid;
+  grid-template-rows: auto minmax(240px, 48vh);
+  width: min(100%, 520px);
+  margin: 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  border-radius: 22px;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(244, 248, 255, 0.92));
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22);
+}
+
+.number-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border-bottom: 1px solid var(--line);
+  padding: 15px 16px;
+}
+
+.number-picker-header div {
+  display: grid;
+  gap: 3px;
+}
+
+.number-picker-header span {
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.number-picker-header strong {
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.number-picker-header button {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.number-picker-header svg {
+  width: 20px;
+  height: 20px;
+}
+
+.number-picker-list {
+  display: grid;
+  gap: 6px;
+  overflow-y: auto;
+  padding: 10px;
+  scroll-snap-type: y proximity;
+}
+
+.number-picker-list button {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  min-height: 48px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 0 16px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.54);
+  scroll-snap-align: center;
+}
+
+.number-picker-list button span {
+  font-size: 19px;
+  font-weight: 900;
+}
+
+.number-picker-list button em {
+  color: var(--muted);
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.number-picker-list button.selected {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: linear-gradient(135deg, var(--primary-soft), rgba(255, 255, 255, 0.88));
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+:root[data-theme='dark'] .number-picker {
+  border-color: rgba(148, 163, 184, 0.2);
+  background:
+    linear-gradient(135deg, rgba(17, 24, 39, 0.98), rgba(30, 41, 59, 0.92));
+}
+
+:root[data-theme='dark'] .number-picker-header {
+  border-bottom-color: rgba(148, 163, 184, 0.18);
+}
+
+:root[data-theme='dark'] .number-picker-header button {
+  border-color: rgba(148, 163, 184, 0.2);
+  background: rgba(15, 23, 42, 0.78);
+}
+
+:root[data-theme='dark'] .number-picker-list button {
+  background: rgba(15, 23, 42, 0.62);
+}
+
+:root[data-theme='dark'] .number-picker-list button.selected {
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.2), rgba(15, 23, 42, 0.84));
 }
 
 .item-score {

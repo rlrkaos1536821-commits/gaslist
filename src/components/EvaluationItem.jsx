@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import AppIcon from './AppIcon.jsx';
 
 function getScoreTone(item, value) {
   if (value === undefined || value === '') return 'neutral';
@@ -15,8 +16,25 @@ function getScoreTone(item, value) {
 }
 
 export default function EvaluationItem({ item, answer, score, onChange }) {
+  const [isNumberPickerOpen, setIsNumberPickerOpen] = useState(false);
+  const selectedNumberRef = useRef(null);
+  const numberOptions = useMemo(() => Array.from({ length: 101 }, (_, index) => index), []);
   const isAnswered = answer !== undefined && answer !== '';
   const cardTone = isAnswered ? getScoreTone(item, score) : 'neutral';
+  const selectedNumber = isAnswered ? Number(answer) : null;
+
+  useEffect(() => {
+    if (!isNumberPickerOpen) return;
+
+    window.setTimeout(() => {
+      selectedNumberRef.current?.scrollIntoView({ block: 'center' });
+    }, 0);
+  }, [isNumberPickerOpen]);
+
+  const selectNumber = (value) => {
+    onChange(item, String(value));
+    setIsNumberPickerOpen(false);
+  };
 
   return (
     <article
@@ -60,20 +78,59 @@ export default function EvaluationItem({ item, answer, score, onChange }) {
           })}
         </div>
       ) : (
-        <label className={`number-input tone-${cardTone}`}>
+        <div className={`number-input tone-${cardTone}`}>
           <span>{item.placeholder}</span>
           <div>
-            <input
-              type="number"
-              inputMode="numeric"
-              min="0"
-              value={answer ?? ''}
-              onChange={(event) => onChange(item, event.target.value)}
-              placeholder="0"
-            />
+            <button
+              type="button"
+              className={`number-picker-trigger ${isAnswered ? 'has-value' : ''}`}
+              onClick={() => setIsNumberPickerOpen(true)}
+              aria-label={`${item.placeholder} 선택`}
+            >
+              <strong>{isAnswered ? selectedNumber : '선택'}</strong>
+              <AppIcon name="chevronDown" />
+            </button>
             <em>{item.unit}</em>
           </div>
-        </label>
+          {isNumberPickerOpen && (
+            <div className="number-picker-backdrop" onClick={() => setIsNumberPickerOpen(false)}>
+              <div
+                className="number-picker"
+                role="dialog"
+                aria-modal="true"
+                aria-label={`${item.placeholder} 선택`}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="number-picker-header">
+                  <div>
+                    <span>{item.excelCell}</span>
+                    <strong>{item.placeholder} 선택</strong>
+                  </div>
+                  <button type="button" onClick={() => setIsNumberPickerOpen(false)} aria-label="선택창 닫기">
+                    <AppIcon name="x" />
+                  </button>
+                </div>
+                <div className="number-picker-list">
+                  {numberOptions.map((value) => {
+                    const selected = selectedNumber === value;
+                    return (
+                      <button
+                        key={value}
+                        ref={selected ? selectedNumberRef : null}
+                        type="button"
+                        className={selected ? 'selected' : ''}
+                        onClick={() => selectNumber(value)}
+                      >
+                        <span>{value}</span>
+                        <em>{item.unit}</em>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       <div className="item-score">
