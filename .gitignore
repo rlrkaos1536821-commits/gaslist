@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+.env.local
+npm-debug.log*
+.vite-dev.log
+.vite-dev.err
+.vite-mobile.log
+.vite-mobile.err
+.vite-*.log
+.vite-*.err
