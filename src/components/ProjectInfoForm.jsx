@@ -5,7 +5,7 @@ const fields = [
   { name: 'projectNumber', label: '공사번호', type: 'text' },
   { name: 'startDate', label: '공사 시작일', type: 'date' },
   { name: 'endDate', label: '공사 종료일', type: 'date' },
-  { name: 'scale', label: '공사규모', type: 'text' },
+  { name: 'scale', label: '공사규모(m)', type: 'text' },
 ];
 
 const contractorOptions = [

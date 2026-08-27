@@ -2145,6 +2145,24 @@ main {
   font-weight: 900;
 }
 
+.history-score.score-grade-high,
+.detail-hero > strong.score-grade-high {
+  color: var(--score-high);
+  background: var(--score-high-soft);
+}
+
+.history-score.score-grade-middle,
+.detail-hero > strong.score-grade-middle {
+  color: var(--score-middle);
+  background: var(--score-middle-soft);
+}
+
+.history-score.score-grade-low,
+.detail-hero > strong.score-grade-low {
+  color: var(--score-low);
+  background: var(--score-low-soft);
+}
+
 .history-message,
 .empty-history {
   border: 1px solid var(--line);
@@ -2238,6 +2256,27 @@ main {
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.18);
   font-size: 22px;
+}
+
+.detail-hero > strong.score-grade-high,
+.detail-hero > strong.score-grade-middle,
+.detail-hero > strong.score-grade-low {
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+
+.detail-hero > strong.score-grade-high {
+  color: var(--score-high);
+  background: var(--score-high-soft);
+}
+
+.detail-hero > strong.score-grade-middle {
+  color: var(--score-middle);
+  background: var(--score-middle-soft);
+}
+
+.detail-hero > strong.score-grade-low {
+  color: var(--score-low);
+  background: var(--score-low-soft);
 }
 
 .detail-info,

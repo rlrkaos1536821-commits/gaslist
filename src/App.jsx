@@ -135,6 +135,12 @@ function getDetailScoreClass(score) {
   return 'score-positive';
 }
 
+function getTotalScoreClass(score) {
+  if (score >= 90) return 'score-grade-high';
+  if (score >= 70) return 'score-grade-middle';
+  return 'score-grade-low';
+}
+
 function TaskList({
   tasks,
   isLoading,
@@ -253,10 +259,10 @@ function TaskList({
                         .join(' · ')}
                     </small>
                   </div>
-                  <div className="history-score task-score">
-                    <strong>{isCompleted ? task.totalScore : progress.percent}</strong>
-                    <span>{isCompleted ? '점' : '%'}</span>
-                  </div>
+                <div className={`history-score task-score ${isCompleted ? getTotalScoreClass(task.totalScore) : ''}`}>
+                  <strong>{isCompleted ? task.totalScore : progress.percent}</strong>
+                  <span>{isCompleted ? '점' : '%'}</span>
+                </div>
                 </button>
                 <button
                   type="button"
@@ -347,7 +353,7 @@ function EvaluationDetail({
           <h2>{info.projectName || '공사명 미입력'}</h2>
           <p>{info.projectNumber || '공사번호 미입력'}</p>
         </div>
-        <strong>{task.totalScore}점</strong>
+        <strong className={getTotalScoreClass(task.totalScore)}>{task.totalScore}점</strong>
       </div>
 
       <dl className="detail-info">
@@ -364,7 +370,7 @@ function EvaluationDetail({
           <dd>{[info.startDate, info.endDate].filter(Boolean).join(' ~ ') || '-'}</dd>
         </div>
         <div>
-          <dt>공사규모</dt>
+          <dt>공사규모(m)</dt>
           <dd>{info.scale || '-'}</dd>
         </div>
       </dl>
