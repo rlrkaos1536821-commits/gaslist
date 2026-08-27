@@ -2395,6 +2395,18 @@ main {
   color: var(--primary);
 }
 
+.detail-item strong.score-zero {
+  color: var(--error);
+}
+
+.detail-item strong.score-low {
+  color: var(--warning);
+}
+
+.detail-item strong.score-positive {
+  color: var(--primary);
+}
+
 
 @media (min-width: 640px) {
   main {

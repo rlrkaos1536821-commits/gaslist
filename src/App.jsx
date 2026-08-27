@@ -129,6 +129,12 @@ function getAutoStatus(currentStatus, answers) {
   return currentStatus || TASK_STATUSES.NEW;
 }
 
+function getDetailScoreClass(score) {
+  if (score <= 0) return 'score-zero';
+  if (score < 3) return 'score-low';
+  return 'score-positive';
+}
+
 function TaskList({
   tasks,
   isLoading,
@@ -303,10 +309,12 @@ function EvaluationDetail({
   groupedItems,
   detailNotice,
   detailAction,
+  detailMailFallback,
   onBack,
   onShare,
   onEdit,
   onDelete,
+  onOpenMailComposer,
 }) {
   if (!task) {
     return (
@@ -382,17 +390,20 @@ function EvaluationDetail({
                 <strong>{sectionScore}점</strong>
               </div>
               <div className="detail-item-list">
-                {items.map((item) => (
-                  <div className="detail-item" key={item.id}>
-                    <span>{item.excelCell}</span>
-                    <p>{item.title}</p>
-                    <em>{String(task.evaluationResults[item.id] ?? '-')}</em>
-                    {task.evaluationNotes?.[item.id] && (
-                      <small>{task.evaluationNotes[item.id]}</small>
-                    )}
-                    <strong>{getStoredScore(item)}점</strong>
-                  </div>
-                ))}
+                {items.map((item) => {
+                  const itemScore = getStoredScore(item);
+                  return (
+                    <div className="detail-item" key={item.id}>
+                      <span>{item.excelCell}</span>
+                      <p>{item.title}</p>
+                      <em>{String(task.evaluationResults[item.id] ?? '-')}</em>
+                      {task.evaluationNotes?.[item.id] && (
+                        <small>{task.evaluationNotes[item.id]}</small>
+                      )}
+                      <strong className={getDetailScoreClass(itemScore)}>{itemScore}점</strong>
+                    </div>
+                  );
+                })}
               </div>
             </section>
           );
@@ -401,6 +412,19 @@ function EvaluationDetail({
 
       <div className="actions">
         {detailNotice && <p className="notice">{detailNotice}</p>}
+        {detailMailFallback && (
+          <div className="mail-fallback-card" role="status">
+            <strong>Excel 파일을 저장했습니다.</strong>
+            <p>
+              공유창을 바로 열 수 없는 경우 메일 작성 화면을 열고, 방금 저장된 Excel 파일을 첨부해주세요.
+            </p>
+            <button type="button" onClick={onOpenMailComposer}>
+              <AppIcon name="mail" />
+              메일 작성 열기
+            </button>
+            <small>{detailMailFallback.fileName}</small>
+          </div>
+        )}
         <button type="button" className="primary-button" onClick={onShare} disabled={Boolean(detailAction)}>
           <span className="button-icon"><AppIcon name="share" /></span>
           <span>
@@ -455,6 +479,7 @@ export default function App() {
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [detailNotice, setDetailNotice] = useState('');
   const [detailAction, setDetailAction] = useState('');
+  const [detailMailFallback, setDetailMailFallback] = useState(null);
   const [isProjectInfoOpen, setIsProjectInfoOpen] = useState(true);
   const [openSections, setOpenSections] = useState(initialOpenSections);
   const skipNextAutoSaveRef = useRef(false);
@@ -737,6 +762,7 @@ export default function App() {
       setLastSavedAt(savedTask.updatedAt);
       setSaveStateText(`${formatSavedAt(savedTask.updatedAt)} 저장됨`);
       setNotice('임시저장 되었습니다.');
+      window.alert(`${statusLabels[savedTask.status] ?? '작성 중'} 상태로 임시저장 되었습니다.\n\n작업 리스트에서 다시 이어서 작성할 수 있습니다.`);
       await loadTaskList();
     } catch (error) {
       console.error('Failed to save task.', error);
@@ -914,6 +940,7 @@ export default function App() {
 
     setDetailAction('share');
     setDetailNotice('평가표 생성 중...');
+    setDetailMailFallback(null);
 
     try {
       const excel = await createEvaluationExcelBlobFromEvaluation(selectedTask);
@@ -924,7 +951,17 @@ export default function App() {
       } catch (error) {
         console.error('Failed to create Excel File object.', error);
         downloadExcelBlob(excel.blob, excel.fileName);
-        setDetailNotice('공유를 지원하지 않아 Excel 파일만 다운로드했습니다.');
+        setDetailMailFallback({
+          fileName: excel.fileName,
+          fileSize: excel.size,
+          status: 'unsupported',
+          reason: 'file-api-unavailable',
+          mailtoHref: createEvaluationMailtoHref({
+            projectInfo: selectedTask.projectInfo,
+            totalScore: selectedTask.totalScore,
+          }),
+        });
+        setDetailNotice('공유를 지원하지 않아 Excel 파일을 저장했습니다. 메일 작성 화면을 열어 첨부해주세요.');
         return;
       }
 
@@ -954,7 +991,18 @@ export default function App() {
       }
 
       downloadExcelBlob(excel.blob, excel.fileName);
-      setDetailNotice('공유가 어려워 Excel 파일만 다운로드했습니다.');
+      setDetailMailFallback({
+        fileName: excel.fileName,
+        fileSize: excel.size,
+        status: shareResult.status,
+        reason: shareResult.reason,
+        diagnostics: shareResult.diagnostics,
+        mailtoHref: createEvaluationMailtoHref({
+          projectInfo: selectedTask.projectInfo,
+          totalScore: selectedTask.totalScore,
+        }),
+      });
+      setDetailNotice('공유가 어려워 Excel 파일을 저장했습니다. 메일 작성 화면을 열어 첨부해주세요.');
     } catch (error) {
       console.error('Failed to regenerate Excel.', error);
       setDetailNotice(String(error?.message || '').startsWith('Template load failed')
@@ -1009,6 +1057,11 @@ export default function App() {
   const openMailComposer = () => {
     if (!mailFallback?.mailtoHref) return;
     window.location.href = mailFallback.mailtoHref;
+  };
+
+  const openDetailMailComposer = () => {
+    if (!detailMailFallback?.mailtoHref) return;
+    window.location.href = detailMailFallback.mailtoHref;
   };
 
   return (
@@ -1167,6 +1220,13 @@ export default function App() {
                   <small>{mailFallback.fileName}</small>
                 </div>
               )}
+              <button type="button" className="save-button" onClick={saveCurrentTask}>
+                <span className="button-icon"><AppIcon name="clipboard" /></span>
+                <span>
+                  <strong>저장하기</strong>
+                  <small>작성 중 상태로 임시저장</small>
+                </span>
+              </button>
               <button type="button" className="primary-button" onClick={completeTask}>
                 <span className="button-icon"><AppIcon name="clipboard" /></span>
                 <span>
@@ -1184,10 +1244,12 @@ export default function App() {
             groupedItems={groupedItems}
             detailNotice={detailNotice}
             detailAction={detailAction}
+            detailMailFallback={detailMailFallback}
             onBack={returnToTaskList}
             onShare={shareStoredEvaluationExcel}
             onEdit={editCompletedTask}
             onDelete={deleteSelectedTask}
+            onOpenMailComposer={openDetailMailComposer}
           />
         )}
       </main>
