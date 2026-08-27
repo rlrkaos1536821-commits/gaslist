@@ -9,3 +9,6 @@ npm-debug.log*
 .vite-mobile.err
 .vite-*.log
 .vite-*.err
+vite-dev.log
+vite-dev.err.log
+vite-dev.pid

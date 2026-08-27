@@ -82,7 +82,8 @@ export default function ProjectInfoForm({ value, onChange }) {
               <button
                 type="button"
                 className="contractor-change-button"
-                onClick={() => setIsContractorPickerOpen(true)}
+                aria-expanded={isContractorPickerOpen}
+                onClick={() => setIsContractorPickerOpen((current) => !current)}
               >
                 선택
               </button>
@@ -91,11 +92,52 @@ export default function ProjectInfoForm({ value, onChange }) {
             <button
               type="button"
               className={`contractor-select ${selectedContractor ? '' : 'is-placeholder'}`}
-              onClick={() => setIsContractorPickerOpen(true)}
+              aria-expanded={isContractorPickerOpen}
+              onClick={() => setIsContractorPickerOpen((current) => !current)}
             >
               {contractorLabel}
               <span aria-hidden="true">⌄</span>
             </button>
+          )}
+          {isContractorPickerOpen && (
+            <div
+              className="contractor-picker"
+              role="listbox"
+              aria-label="시공협력사 선택"
+            >
+              <div className="contractor-picker-header">
+                <strong>시공협력사 선택</strong>
+                <span>정해진 업체를 빠르게 선택하세요.</span>
+              </div>
+              <div className="contractor-picker-options">
+                {contractorOptions.map((contractor) => (
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={selectedContractor === contractor}
+                    className={`contractor-picker-option ${selectedContractor === contractor ? 'selected' : ''}`}
+                    key={contractor}
+                    data-contractor-option={contractor}
+                    onClick={() => {
+                      setContractorMode('preset');
+                      updateField('contractor', contractor);
+                      setIsContractorPickerOpen(false);
+                    }}
+                  >
+                    {contractor}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                className={`contractor-custom-button ${isDirectInput ? 'selected' : ''}`}
+                data-contractor-option="custom"
+                onPointerDown={selectCustomContractor}
+                onClick={selectCustomContractor}
+              >
+                직접입력
+              </button>
+            </div>
           )}
         </div>
         <label className="field">
@@ -108,61 +150,6 @@ export default function ProjectInfoForm({ value, onChange }) {
           />
         </label>
       </div>
-      {isContractorPickerOpen && (
-        <div
-          className="contractor-picker-backdrop"
-          role="presentation"
-          onClick={() => setIsContractorPickerOpen(false)}
-        >
-          <div
-            className="contractor-picker"
-            role="dialog"
-            aria-modal="true"
-            aria-label="시공협력사 선택"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="contractor-picker-header">
-              <div>
-                <strong>시공협력사 선택</strong>
-                <span>정해진 업체를 빠르게 선택하세요.</span>
-              </div>
-              <button
-                type="button"
-                aria-label="시공협력사 선택 닫기"
-                onClick={() => setIsContractorPickerOpen(false)}
-              >
-                ×
-              </button>
-            </div>
-            <div className="contractor-picker-options">
-              {contractorOptions.map((contractor) => (
-              <button
-                type="button"
-                className={`contractor-picker-option ${selectedContractor === contractor ? 'selected' : ''}`}
-                key={contractor}
-                data-contractor-option={contractor}
-                onClick={() => {
-                    setContractorMode('preset');
-                    updateField('contractor', contractor);
-                    setIsContractorPickerOpen(false);
-                  }}
-                >
-                  {contractor}
-                </button>
-              ))}
-            </div>
-            <button
-              type="button"
-              className={`contractor-custom-button ${isDirectInput ? 'selected' : ''}`}
-              data-contractor-option="custom"
-              onPointerDown={selectCustomContractor}
-              onClick={selectCustomContractor}
-            >
-              직접입력
-            </button>
-          </div>
-        </div>
-      )}
     </section>
   );
 }

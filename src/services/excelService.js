@@ -42,6 +42,19 @@ function writeEvaluationScores(worksheet, answers) {
   });
 }
 
+function getEvaluationNoteCell(excelCell) {
+  const rowNumber = String(excelCell).match(/\d+/)?.[0];
+  return rowNumber ? `G${rowNumber}` : '';
+}
+
+function writeEvaluationNotes(worksheet, notes = {}) {
+  evaluationItems.forEach((item) => {
+    const noteCell = getEvaluationNoteCell(item.excelCell);
+    if (!noteCell) return;
+    setCellValue(worksheet, noteCell, notes[item.id] || '');
+  });
+}
+
 function preserveTotalFormulaOrSetValue(worksheet, totalScore) {
   const totalCell = worksheet.getCell(TOTAL_SCORE_CELL);
   const formula = totalCell.formula || 'SUM(D7:D36)';
@@ -68,7 +81,7 @@ export function downloadExcelBlob(blob, fileName) {
   URL.revokeObjectURL(url);
 }
 
-export async function createEvaluationExcelBlob({ projectInfo, answers, totalScore }) {
+export async function createEvaluationExcelBlob({ projectInfo, answers, notes = {}, totalScore }) {
   const { default: ExcelJS } = await import('exceljs');
   const response = await fetch(TEMPLATE_URL);
 
@@ -87,6 +100,7 @@ export async function createEvaluationExcelBlob({ projectInfo, answers, totalSco
 
   writeProjectInfo(worksheet, projectInfo);
   writeEvaluationScores(worksheet, answers);
+  writeEvaluationNotes(worksheet, notes);
   writeScoreDisplay(worksheet, totalScore);
   const totalHandling = preserveTotalFormulaOrSetValue(worksheet, totalScore);
 
@@ -104,8 +118,17 @@ export async function createEvaluationExcelBlob({ projectInfo, answers, totalSco
   };
 }
 
-export async function generateEvaluationExcel({ projectInfo, answers, totalScore }) {
-  const excel = await createEvaluationExcelBlob({ projectInfo, answers, totalScore });
+export async function createEvaluationExcelBlobFromEvaluation(evaluation) {
+  return createEvaluationExcelBlob({
+    projectInfo: evaluation.projectInfo,
+    answers: evaluation.evaluationResults,
+    notes: evaluation.evaluationNotes,
+    totalScore: evaluation.totalScore,
+  });
+}
+
+export async function generateEvaluationExcel({ projectInfo, answers, notes = {}, totalScore }) {
+  const excel = await createEvaluationExcelBlob({ projectInfo, answers, notes, totalScore });
   downloadExcelBlob(excel.blob, excel.fileName);
 
   return {
