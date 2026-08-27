@@ -11,9 +11,9 @@ import {
 } from './services/excelService.js';
 import {
   deleteEvaluation,
-  EVALUATION_DB_NAME,
   getAllEvaluations,
   saveEvaluation,
+  TASK_STATUSES,
 } from './services/evaluationStorage.js';
 import { clearDraft, formatSavedAt, loadDraft, saveDraft } from './utils/draftStorage.js';
 import { formatDateForDisplay } from './utils/dateUtils.js';
@@ -47,6 +47,19 @@ const requiredProjectFields = [
 ];
 
 const THEME_STORAGE_KEY = 'constructionEvaluationTheme';
+const TASK_FILTERS = [
+  { id: 'all', label: '전체' },
+  { id: 'active', label: '진행 중' },
+  { id: 'completed', label: '완료' },
+];
+
+const statusLabels = {
+  [TASK_STATUSES.NEW]: '신규',
+  [TASK_STATUSES.IN_PROGRESS]: '작성 중',
+  [TASK_STATUSES.DRAFT]: '임시저장',
+  [TASK_STATUSES.COMPLETED]: '평가 완료',
+  [TASK_STATUSES.EDITING]: '수정 중',
+};
 
 function groupItemsByCategory(items) {
   return categoryOrder.map((category) => ({
@@ -56,8 +69,8 @@ function groupItemsByCategory(items) {
 }
 
 function createEvaluationId() {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) return `evaluation_${crypto.randomUUID()}`;
-  return `evaluation_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return `task_${crypto.randomUUID()}`;
+  return `task_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function calculateScores(evaluationResults) {
@@ -65,92 +78,189 @@ function calculateScores(evaluationResults) {
   const adjustmentScore = evaluationItems
     .filter((item) => item.scoreType === 'adjustment')
     .reduce((sum, item) => sum + getItemScore(item, evaluationResults[item.id]), 0);
-  const unevaluatedCount = evaluationItems.filter((item) => !isAnswered(evaluationResults[item.id])).length;
+  const completedCount = evaluationItems.filter((item) => isAnswered(evaluationResults[item.id])).length;
+  const unevaluatedCount = evaluationItems.length - completedCount;
 
   return {
     basicScore,
     adjustmentScore,
     totalScore: basicScore + adjustmentScore,
+    completedCount,
+    totalCount: evaluationItems.length,
     unevaluatedCount,
   };
 }
 
-function buildSearchText(evaluation) {
-  const info = evaluation.projectInfo ?? {};
+function buildSearchText(task) {
+  const info = task.projectInfo ?? {};
   return [info.projectName, info.projectNumber, info.contractor].join(' ').toLowerCase();
 }
 
-function EvaluationList({
-  evaluations,
+function hasProjectInfo(projectInfo) {
+  return Object.values(projectInfo ?? {}).some((value) => String(value ?? '').trim());
+}
+
+function hasDraftContent(draft) {
+  return Boolean(
+    draft
+    && (
+      hasProjectInfo(draft.projectInfo)
+      || Object.keys(draft.evaluationResults ?? {}).length > 0
+      || Object.keys(draft.evaluationNotes ?? {}).length > 0
+    ),
+  );
+}
+
+function getTaskTitle(task) {
+  return task.projectInfo?.projectName || '공사명 미입력';
+}
+
+function getTaskProgress(task) {
+  const totalCount = task.totalCount || evaluationItems.length;
+  const completedCount = task.completedCount ?? calculateScores(task.evaluationResults ?? {}).completedCount;
+  const percent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+  return { completedCount, totalCount, percent };
+}
+
+function getAutoStatus(currentStatus, answers) {
+  if (currentStatus === TASK_STATUSES.EDITING) return TASK_STATUSES.EDITING;
+  if (currentStatus === TASK_STATUSES.COMPLETED) return TASK_STATUSES.COMPLETED;
+  if (Object.values(answers ?? {}).some(isAnswered)) return TASK_STATUSES.IN_PROGRESS;
+  return currentStatus || TASK_STATUSES.NEW;
+}
+
+function TaskList({
+  tasks,
   isLoading,
   searchTerm,
+  activeFilter,
+  onFilterChange,
   onSearchChange,
-  onOpenEvaluation,
-  onNewEvaluation,
+  onOpenTask,
+  onNewTask,
+  onDeleteTask,
 }) {
-  const filteredEvaluations = useMemo(() => {
+  const filteredTasks = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
-    if (!normalizedSearch) return evaluations;
 
-    return evaluations.filter((evaluation) => buildSearchText(evaluation).includes(normalizedSearch));
-  }, [evaluations, searchTerm]);
+    return tasks.filter((task) => {
+      const isCompleted = task.status === TASK_STATUSES.COMPLETED;
+      const matchesFilter =
+        activeFilter === 'all'
+        || (activeFilter === 'completed' && isCompleted)
+        || (activeFilter === 'active' && !isCompleted);
+      const matchesSearch = !normalizedSearch || buildSearchText(task).includes(normalizedSearch);
+      return matchesFilter && matchesSearch;
+    });
+  }, [activeFilter, searchTerm, tasks]);
+
+  const activeCount = tasks.filter((task) => task.status !== TASK_STATUSES.COMPLETED).length;
+  const completedCount = tasks.length - activeCount;
 
   return (
-    <section className="history-view" aria-label="평가 리스트">
-      <div className="history-heading">
-        <div>
-          <span>{EVALUATION_DB_NAME}</span>
-          <h2>평가 리스트</h2>
+    <section className="history-view task-list-view" aria-label="작업 리스트">
+      <div className="history-heading task-heading">
+        <div className="task-heading-icon">
+          <AppIcon name="list" />
         </div>
-        <strong>{evaluations.length}건</strong>
+        <div>
+          <span>최근 작업한 순서</span>
+          <h2>작업 리스트</h2>
+        </div>
+        <strong>{tasks.length}건</strong>
       </div>
+
+      <button type="button" className="primary-button task-create-button compact-action" onClick={onNewTask}>
+        <span className="button-icon"><AppIcon name="play" /></span>
+        <span>
+          <strong>새 작업 만들기</strong>
+          <small>공사정보 입력부터 시작</small>
+        </span>
+      </button>
 
       <label className="history-search">
         <AppIcon name="search" />
         <input
           type="search"
           value={searchTerm}
-          placeholder="공사명 또는 공사번호 검색"
+          placeholder="공사명, 공사번호, 협력사 검색"
           onChange={(event) => onSearchChange(event.target.value)}
         />
       </label>
 
-      {isLoading ? (
-        <p className="history-message">저장된 평가를 불러오는 중입니다.</p>
-      ) : filteredEvaluations.length === 0 ? (
-        <div className="empty-history">
-          <strong>저장된 평가가 없습니다.</strong>
-          <p>새 평가를 작성하고 저장하면 이곳에서 다시 확인할 수 있습니다.</p>
-          <button type="button" className="secondary-button compact-action" onClick={onNewEvaluation}>
-            <span className="button-icon"><AppIcon name="play" /></span>
-            <span>
-              <strong>새 평가 작성</strong>
-              <small>평가 작성 화면으로 이동</small>
-            </span>
+      <div className="task-filters" role="tablist" aria-label="작업 필터">
+        {TASK_FILTERS.map((filter) => (
+          <button
+            type="button"
+            key={filter.id}
+            className={activeFilter === filter.id ? 'active' : ''}
+            onClick={() => onFilterChange(filter.id)}
+          >
+            {filter.label}
           </button>
+        ))}
+      </div>
+
+      <p className="task-count-summary">진행 중 {activeCount}건 · 완료 {completedCount}건</p>
+
+      {isLoading ? (
+        <p className="history-message">작업을 불러오는 중입니다.</p>
+      ) : filteredTasks.length === 0 ? (
+        <div className="empty-history">
+          <strong>표시할 작업이 없습니다.</strong>
+          <p>새 작업을 만들면 작성 중인 평가도 이곳에 자동으로 저장됩니다.</p>
         </div>
       ) : (
         <div className="history-list">
-          {filteredEvaluations.map((evaluation) => {
-            const info = evaluation.projectInfo ?? {};
+          {filteredTasks.map((task) => {
+            const info = task.projectInfo ?? {};
+            const progress = getTaskProgress(task);
+            const isCompleted = task.status === TASK_STATUSES.COMPLETED;
             return (
-              <button
-                type="button"
-                className="history-card"
-                key={evaluation.id}
-                onClick={() => onOpenEvaluation(evaluation)}
-              >
-                <div className="history-card-main">
-                  <strong>{info.projectName || '공사명 없음'}</strong>
-                  <span>{info.projectNumber || '공사번호 없음'}</span>
-                  <em>{[info.contractor || '시공협력사 없음', info.manager || '시공관리자 없음'].join(' · ')}</em>
-                  <small>{formatDateForDisplay(evaluation.updatedAt, { includeTime: true })}</small>
-                </div>
-                <div className="history-score">
-                  <strong>{evaluation.totalScore}</strong>
-                  <span>점</span>
-                </div>
-              </button>
+              <article className="task-card-shell" key={task.id}>
+                <button
+                  type="button"
+                  className={`history-card task-card status-${task.status}`}
+                  onClick={() => onOpenTask(task)}
+                >
+                  <div className="history-card-main">
+                    <div className="task-card-title-row">
+                      <strong>{getTaskTitle(task)}</strong>
+                      <span className={`status-badge status-badge-${task.status}`}>
+                        {statusLabels[task.status] ?? '작성 중'}
+                      </span>
+                    </div>
+                    <span>{info.projectNumber || '공사번호 미입력'}</span>
+                    {isCompleted ? (
+                      <em>평가 완료 · {task.totalScore}점</em>
+                    ) : (
+                      <>
+                        <div className="task-progress" aria-label={`진행률 ${progress.percent}%`}>
+                          <span style={{ width: `${progress.percent}%` }} />
+                        </div>
+                        <em>{progress.percent}% · {progress.completedCount}/{progress.totalCount} 항목 완료</em>
+                      </>
+                    )}
+                    <small>
+                      {[info.contractor || '시공협력사 미입력', formatDateForDisplay(task.updatedAt, { includeTime: true })]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </small>
+                  </div>
+                  <div className="history-score task-score">
+                    <strong>{isCompleted ? task.totalScore : progress.percent}</strong>
+                    <span>{isCompleted ? '점' : '%'}</span>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  className="task-card-delete"
+                  aria-label={`${getTaskTitle(task)} 작업 삭제`}
+                  onClick={() => onDeleteTask(task)}
+                >
+                  <AppIcon name="trash" />
+                </button>
+              </article>
             );
           })}
         </div>
@@ -159,47 +269,77 @@ function EvaluationList({
   );
 }
 
+function ProjectSetup({ projectInfo, saveStateText, onProjectInfoChange, onBack, onStartEvaluation }) {
+  return (
+    <section className="project-setup-view" aria-label="새 작업 공사정보">
+      <button type="button" className="back-button" onClick={onBack}>
+        <AppIcon name="arrowLeft" />
+        작업 리스트
+      </button>
+
+      <div className="setup-heading">
+        <span>새 시공평가</span>
+        <h2>{projectInfo.projectName || '공사정보 입력'}</h2>
+        <p>{saveStateText}</p>
+      </div>
+
+      <ProjectInfoForm value={projectInfo} onChange={onProjectInfoChange} />
+
+      <div className="actions">
+        <button type="button" className="primary-button" onClick={onStartEvaluation}>
+          <span className="button-icon"><AppIcon name="play" /></span>
+          <span>
+            <strong>평가 시작</strong>
+            <small>입력한 공사정보로 평가 작성</small>
+          </span>
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function EvaluationDetail({
-  evaluation,
+  task,
   groupedItems,
   detailNotice,
   detailAction,
   onBack,
   onShare,
+  onEdit,
   onDelete,
 }) {
-  if (!evaluation) {
+  if (!task) {
     return (
       <section className="history-view">
-        <p className="history-message">선택한 평가를 찾을 수 없습니다.</p>
+        <p className="history-message">선택한 작업을 찾을 수 없습니다.</p>
         <button type="button" className="ghost-button compact-action" onClick={onBack}>
           <span className="button-icon"><AppIcon name="arrowLeft" /></span>
           <span>
-            <strong>목록으로 돌아가기</strong>
-            <small>평가 리스트로 이동</small>
+            <strong>작업 리스트로</strong>
+            <small>작업 리스트로 이동</small>
           </span>
         </button>
       </section>
     );
   }
 
-  const info = evaluation.projectInfo ?? {};
-  const getStoredScore = (item) => getItemScore(item, evaluation.evaluationResults[item.id]);
+  const info = task.projectInfo ?? {};
+  const getStoredScore = (item) => getItemScore(item, task.evaluationResults[item.id]);
 
   return (
-    <section className="detail-view" aria-label="평가 상세">
+    <section className="detail-view" aria-label="평가 완료 상세">
       <button type="button" className="back-button" onClick={onBack}>
         <AppIcon name="arrowLeft" />
-        평가 리스트
+        작업 리스트
       </button>
 
       <div className="detail-hero">
         <div>
-          <span>{formatDateForDisplay(evaluation.updatedAt, { includeTime: true })}</span>
-          <h2>{info.projectName || '공사명 없음'}</h2>
-          <p>{info.projectNumber || '공사번호 없음'}</p>
+          <span>{statusLabels[task.status] ?? '평가 완료'} · {formatDateForDisplay(task.updatedAt, { includeTime: true })}</span>
+          <h2>{info.projectName || '공사명 미입력'}</h2>
+          <p>{info.projectNumber || '공사번호 미입력'}</p>
         </div>
-        <strong>{evaluation.totalScore}점</strong>
+        <strong>{task.totalScore}점</strong>
       </div>
 
       <dl className="detail-info">
@@ -224,11 +364,11 @@ function EvaluationDetail({
       <div className="detail-score-grid">
         <div>
           <span>기본점수</span>
-          <strong>{evaluation.basicScore}점</strong>
+          <strong>{task.basicScore}점</strong>
         </div>
         <div>
           <span>가·감점</span>
-          <strong>{evaluation.adjustmentScore > 0 ? `+${evaluation.adjustmentScore}` : evaluation.adjustmentScore}점</strong>
+          <strong>{task.adjustmentScore > 0 ? `+${task.adjustmentScore}` : task.adjustmentScore}점</strong>
         </div>
       </div>
 
@@ -246,9 +386,9 @@ function EvaluationDetail({
                   <div className="detail-item" key={item.id}>
                     <span>{item.excelCell}</span>
                     <p>{item.title}</p>
-                    <em>{String(evaluation.evaluationResults[item.id] ?? '-')}</em>
-                    {evaluation.evaluationNotes?.[item.id] && (
-                      <small>{evaluation.evaluationNotes[item.id]}</small>
+                    <em>{String(task.evaluationResults[item.id] ?? '-')}</em>
+                    {task.evaluationNotes?.[item.id] && (
+                      <small>{task.evaluationNotes[item.id]}</small>
                     )}
                     <strong>{getStoredScore(item)}점</strong>
                   </div>
@@ -261,18 +401,25 @@ function EvaluationDetail({
 
       <div className="actions">
         {detailNotice && <p className="notice">{detailNotice}</p>}
-        <button type="button" className="secondary-button" onClick={onShare} disabled={Boolean(detailAction)}>
+        <button type="button" className="primary-button" onClick={onShare} disabled={Boolean(detailAction)}>
           <span className="button-icon"><AppIcon name="share" /></span>
           <span>
             <strong>{detailAction === 'share' ? 'Excel 생성 중...' : 'Excel 생성 및 공유'}</strong>
-            <small>저장된 평가 데이터로 재생성</small>
+            <small>완료된 평가 데이터로 생성</small>
           </span>
         </button>
-        <button type="button" className="danger-button" onClick={onDelete}>
+        <button type="button" className="secondary-button compact-action" onClick={onEdit}>
+          <span className="button-icon"><AppIcon name="edit" /></span>
+          <span>
+            <strong>수정하기</strong>
+            <small>평가 작성 화면으로 불러오기</small>
+          </span>
+        </button>
+        <button type="button" className="danger-button compact-action" onClick={onDelete}>
           <span className="button-icon"><AppIcon name="trash" /></span>
           <span>
-            <strong>평가 삭제</strong>
-            <small>저장된 평가 결과를 삭제</small>
+            <strong>작업 삭제</strong>
+            <small>작성한 평가 내용도 함께 삭제</small>
           </span>
         </button>
       </div>
@@ -290,44 +437,76 @@ export default function App() {
     }
   });
   const [restoredDraft] = useState(() => loadDraft());
-  const [activeView, setActiveView] = useState('edit');
-  const [projectInfo, setProjectInfo] = useState({
-    ...initialProjectInfo,
-    ...(restoredDraft?.projectInfo ?? {}),
-  });
-  const [answers, setAnswers] = useState(restoredDraft?.evaluationResults ?? {});
-  const [notes, setNotes] = useState(restoredDraft?.evaluationNotes ?? {});
-  const [currentEvaluationId, setCurrentEvaluationId] = useState(restoredDraft?.currentEvaluationId ?? '');
-  const [notice, setNotice] = useState(restoredDraft ? '임시저장 데이터가 복원되었습니다.' : '');
+  const [activeView, setActiveView] = useState('history');
+  const [projectInfo, setProjectInfo] = useState(initialProjectInfo);
+  const [answers, setAnswers] = useState({});
+  const [notes, setNotes] = useState({});
+  const [currentEvaluationId, setCurrentEvaluationId] = useState('');
+  const [currentStatus, setCurrentStatus] = useState(TASK_STATUSES.NEW);
+  const [notice, setNotice] = useState('');
   const [mailFallback, setMailFallback] = useState(null);
-  const [lastSavedAt, setLastSavedAt] = useState(restoredDraft?.lastSavedAt ?? '');
+  const [lastSavedAt, setLastSavedAt] = useState('');
+  const [saveStateText, setSaveStateText] = useState('');
   const [excelAction, setExcelAction] = useState('');
-  const [isSavingEvaluation, setIsSavingEvaluation] = useState(false);
-  const [evaluations, setEvaluations] = useState([]);
-  const [selectedEvaluation, setSelectedEvaluation] = useState(null);
-  const [historySearch, setHistorySearch] = useState('');
+  const [tasks, setTasks] = useState([]);
+  const [selectedTask, setSelectedTask] = useState(null);
+  const [taskSearch, setTaskSearch] = useState('');
+  const [taskFilter, setTaskFilter] = useState('all');
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [detailNotice, setDetailNotice] = useState('');
   const [detailAction, setDetailAction] = useState('');
   const [isProjectInfoOpen, setIsProjectInfoOpen] = useState(true);
   const [openSections, setOpenSections] = useState(initialOpenSections);
-  const didMountRef = useRef(false);
   const skipNextAutoSaveRef = useRef(false);
+  const draftMigrationRef = useRef(false);
 
   const groupedItems = useMemo(() => groupItemsByCategory(evaluationItems), []);
   const scores = useMemo(() => calculateScores(answers), [answers]);
   const getScore = (item) => getItemScore(item, answers[item.id]);
   const isDarkMode = theme === 'dark';
 
-  const loadEvaluationHistory = async () => {
+  const buildTaskRecord = ({
+    id = currentEvaluationId,
+    status = currentStatus,
+    createdAt,
+    updatedAt,
+    completedAt,
+    lastExcelGeneratedAt,
+    sourceProjectInfo = projectInfo,
+    sourceAnswers = answers,
+    sourceNotes = notes,
+  } = {}) => {
+    const now = new Date().toISOString();
+    const existingTask = id ? tasks.find((task) => task.id === id) : null;
+    const nextScores = calculateScores(sourceAnswers);
+
+    return {
+      id: id || createEvaluationId(),
+      status,
+      createdAt: createdAt || existingTask?.createdAt || now,
+      updatedAt: updatedAt || now,
+      completedAt: completedAt ?? existingTask?.completedAt ?? '',
+      lastExcelGeneratedAt: lastExcelGeneratedAt ?? existingTask?.lastExcelGeneratedAt ?? '',
+      projectInfo: sourceProjectInfo,
+      evaluationResults: sourceAnswers,
+      evaluationNotes: sourceNotes,
+      basicScore: nextScores.basicScore,
+      adjustmentScore: nextScores.adjustmentScore,
+      totalScore: nextScores.totalScore,
+      completedCount: nextScores.completedCount,
+      totalCount: nextScores.totalCount,
+    };
+  };
+
+  const loadTaskList = async () => {
     setIsHistoryLoading(true);
     try {
-      const storedEvaluations = await getAllEvaluations();
-      setEvaluations(storedEvaluations);
-      return storedEvaluations;
+      const storedTasks = await getAllEvaluations();
+      setTasks(storedTasks);
+      return storedTasks;
     } catch (error) {
-      console.error('Failed to load saved evaluations.', error);
-      setNotice('저장된 평가를 불러오는 중 오류가 발생했습니다.');
+      console.error('Failed to load tasks.', error);
+      setNotice('작업을 불러오는 중 오류가 발생했습니다.');
       return [];
     } finally {
       setIsHistoryLoading(false);
@@ -345,36 +524,163 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
-    loadEvaluationHistory();
+    const initializeTasks = async () => {
+      const storedTasks = await loadTaskList();
+
+      if (draftMigrationRef.current || !hasDraftContent(restoredDraft)) return;
+      draftMigrationRef.current = true;
+
+      const draftScores = calculateScores(restoredDraft.evaluationResults ?? {});
+      const existingTask = restoredDraft.currentEvaluationId
+        ? storedTasks.find((task) => task.id === restoredDraft.currentEvaluationId)
+        : null;
+      const now = new Date().toISOString();
+      const migratedTask = {
+        id: restoredDraft.currentEvaluationId || createEvaluationId(),
+        status: existingTask?.status || TASK_STATUSES.DRAFT,
+        createdAt: existingTask?.createdAt || restoredDraft.lastSavedAt || now,
+        updatedAt: restoredDraft.lastSavedAt || now,
+        completedAt: existingTask?.completedAt || '',
+        lastExcelGeneratedAt: existingTask?.lastExcelGeneratedAt || '',
+        projectInfo: {
+          ...initialProjectInfo,
+          ...(restoredDraft.projectInfo ?? {}),
+        },
+        evaluationResults: restoredDraft.evaluationResults ?? {},
+        evaluationNotes: restoredDraft.evaluationNotes ?? {},
+        basicScore: draftScores.basicScore,
+        adjustmentScore: draftScores.adjustmentScore,
+        totalScore: draftScores.totalScore,
+        completedCount: draftScores.completedCount,
+        totalCount: draftScores.totalCount,
+      };
+
+      try {
+        await saveEvaluation(migratedTask);
+        clearDraft();
+        await loadTaskList();
+        setNotice('기존 임시저장 데이터를 작업 리스트로 옮겼습니다.');
+      } catch (error) {
+        console.error('Failed to migrate draft.', error);
+        setNotice('기존 임시저장 데이터를 옮기지 못했습니다.');
+      }
+    };
+
+    initializeTasks();
   }, []);
 
   useEffect(() => {
-    if (!didMountRef.current) {
-      didMountRef.current = true;
-      return undefined;
-    }
+    if (!currentEvaluationId || !['project', 'edit'].includes(activeView)) return undefined;
 
     if (skipNextAutoSaveRef.current) {
       skipNextAutoSaveRef.current = false;
       return undefined;
     }
 
-    const saveTimer = window.setTimeout(() => {
+    setSaveStateText('저장 중...');
+    const saveTimer = window.setTimeout(async () => {
+      const nextStatus = getAutoStatus(currentStatus, answers);
+      const task = buildTaskRecord({ status: nextStatus });
+
       try {
-        const draft = saveDraft({
-          currentEvaluationId,
+        const savedTask = await saveEvaluation(task);
+        saveDraft({
+          currentEvaluationId: savedTask.id,
           projectInfo,
           evaluationResults: answers,
           evaluationNotes: notes,
         });
-        setLastSavedAt(draft.lastSavedAt);
+        setCurrentStatus(savedTask.status);
+        setLastSavedAt(savedTask.updatedAt);
+        setSaveStateText(`${formatSavedAt(savedTask.updatedAt)} 저장됨`);
+        setTasks((current) => {
+          const withoutSaved = current.filter((item) => item.id !== savedTask.id);
+          return [savedTask, ...withoutSaved].sort((first, second) => String(second.updatedAt).localeCompare(String(first.updatedAt)));
+        });
       } catch (error) {
-        console.error('Failed to save evaluation draft.', error);
+        console.error('Failed to autosave task.', error);
+        setSaveStateText('자동저장 실패');
       }
-    }, 500);
+    }, 600);
 
     return () => window.clearTimeout(saveTimer);
-  }, [currentEvaluationId, projectInfo, answers, notes]);
+  }, [activeView, currentEvaluationId, currentStatus, projectInfo, answers, notes]);
+
+  const loadTaskIntoEditor = (task) => {
+    skipNextAutoSaveRef.current = true;
+    setCurrentEvaluationId(task.id);
+    setCurrentStatus(task.status);
+    setProjectInfo({
+      ...initialProjectInfo,
+      ...(task.projectInfo ?? {}),
+    });
+    setAnswers(task.evaluationResults ?? {});
+    setNotes(task.evaluationNotes ?? {});
+    setLastSavedAt(task.updatedAt ?? '');
+    setSaveStateText(task.updatedAt ? `${formatSavedAt(task.updatedAt)} 저장됨` : '');
+    setMailFallback(null);
+    setNotice('');
+    setIsProjectInfoOpen(!hasProjectInfo(task.projectInfo));
+    setOpenSections(initialOpenSections);
+  };
+
+  const createNewTask = async () => {
+    const now = new Date().toISOString();
+    const newTask = {
+      id: createEvaluationId(),
+      status: TASK_STATUSES.NEW,
+      createdAt: now,
+      updatedAt: now,
+      completedAt: '',
+      lastExcelGeneratedAt: '',
+      projectInfo: initialProjectInfo,
+      evaluationResults: {},
+      evaluationNotes: {},
+      basicScore: 0,
+      adjustmentScore: 0,
+      totalScore: 0,
+      completedCount: 0,
+      totalCount: evaluationItems.length,
+    };
+
+    try {
+      const savedTask = await saveEvaluation(newTask);
+      clearDraft();
+      await loadTaskList();
+      loadTaskIntoEditor(savedTask);
+      setActiveView('project');
+      setNotice('');
+    } catch (error) {
+      console.error('Failed to create task.', error);
+      setNotice('새 작업을 만들지 못했습니다.');
+    }
+  };
+
+  const openTask = (task) => {
+    setSelectedTask(task);
+    setDetailNotice('');
+
+    if (task.status === TASK_STATUSES.COMPLETED) {
+      setActiveView('detail');
+      return;
+    }
+
+    loadTaskIntoEditor(task);
+    setActiveView(hasProjectInfo(task.projectInfo) ? 'edit' : 'project');
+  };
+
+  const returnToTaskList = async () => {
+    await loadTaskList();
+    setActiveView('history');
+  };
+
+  const updateProjectInfo = (nextProjectInfo) => {
+    setProjectInfo((current) => (
+      typeof nextProjectInfo === 'function' ? nextProjectInfo(current) : nextProjectInfo
+    ));
+    setNotice('');
+    setMailFallback(null);
+  };
 
   const handleAnswerChange = (item, value) => {
     setAnswers((current) => ({
@@ -393,12 +699,6 @@ export default function App() {
     setNotice('');
   };
 
-  const handleProjectInfoChange = (nextProjectInfo) => {
-    setProjectInfo(nextProjectInfo);
-    setNotice('');
-    setMailFallback(null);
-  };
-
   const toggleSection = (category) => {
     setOpenSections((current) => ({
       ...current,
@@ -413,36 +713,46 @@ export default function App() {
     }));
   };
 
-  const resetEditorState = () => {
-    clearDraft();
-    skipNextAutoSaveRef.current = true;
-    setProjectInfo(initialProjectInfo);
-    setAnswers({});
-    setNotes({});
-    setCurrentEvaluationId('');
-    setLastSavedAt('');
-    setMailFallback(null);
-    setIsProjectInfoOpen(true);
-    setOpenSections(initialOpenSections);
-  };
-
-  const startNewEvaluation = () => {
-    const confirmed = window.confirm('현재 작성 중인 평가내용과 임시저장 데이터를 삭제하시겠습니까?');
-    if (!confirmed) return;
-
-    resetEditorState();
+  const startEvaluation = () => {
+    setCurrentStatus((status) => (status === TASK_STATUSES.EDITING ? TASK_STATUSES.EDITING : TASK_STATUSES.IN_PROGRESS));
+    setIsProjectInfoOpen(false);
     setActiveView('edit');
-    setNotice('새 평가가 시작되었습니다.');
   };
 
-  const validateEvaluation = (purpose = 'Excel') => {
+  const saveCurrentTask = async () => {
+    if (!currentEvaluationId) return;
+
+    const nextStatus = getAutoStatus(currentStatus, answers);
+    const task = buildTaskRecord({ status: nextStatus });
+
+    try {
+      const savedTask = await saveEvaluation(task);
+      saveDraft({
+        currentEvaluationId: savedTask.id,
+        projectInfo,
+        evaluationResults: answers,
+        evaluationNotes: notes,
+      });
+      setCurrentStatus(savedTask.status);
+      setLastSavedAt(savedTask.updatedAt);
+      setSaveStateText(`${formatSavedAt(savedTask.updatedAt)} 저장됨`);
+      setNotice('임시저장 되었습니다.');
+      await loadTaskList();
+    } catch (error) {
+      console.error('Failed to save task.', error);
+      setNotice('작업 저장 중 오류가 발생했습니다.');
+    }
+  };
+
+  const validateEvaluation = (purpose = '완료') => {
     const missingProjectFields = requiredProjectFields
       .filter(([field]) => !String(projectInfo[field] || '').trim())
       .map(([, label]) => label);
 
     if (missingProjectFields.length > 0) {
       setNotice(`필수 공사정보를 입력해주세요. (${missingProjectFields.join(', ')})`);
-      setActiveView('edit');
+      setIsProjectInfoOpen(true);
+      setActiveView('project');
       return false;
     }
 
@@ -465,49 +775,61 @@ export default function App() {
     return true;
   };
 
+  const completeTask = async () => {
+    if (!currentEvaluationId) return;
+    if (!validateEvaluation('평가 완료')) return;
+
+    const confirmed = window.confirm('평가를 완료하시겠습니까?\n\n완료 후에도 수정할 수 있습니다.');
+    if (!confirmed) return;
+
+    const now = new Date().toISOString();
+    const completedTask = buildTaskRecord({
+      status: TASK_STATUSES.COMPLETED,
+      updatedAt: now,
+      completedAt: now,
+    });
+
+    try {
+      const savedTask = await saveEvaluation(completedTask);
+      clearDraft();
+      setCurrentStatus(savedTask.status);
+      setSelectedTask(savedTask);
+      setNotice('');
+      await loadTaskList();
+      setActiveView('detail');
+    } catch (error) {
+      console.error('Failed to complete task.', error);
+      setNotice('평가 완료 저장 중 오류가 발생했습니다.');
+    }
+  };
+
+  const editCompletedTask = async () => {
+    if (!selectedTask) return;
+
+    const editingTask = {
+      ...selectedTask,
+      status: TASK_STATUSES.EDITING,
+      updatedAt: new Date().toISOString(),
+    };
+
+    try {
+      const savedTask = await saveEvaluation(editingTask);
+      await loadTaskList();
+      loadTaskIntoEditor(savedTask);
+      setNotice('평가 수정 중입니다.');
+      setActiveView('edit');
+    } catch (error) {
+      console.error('Failed to enter edit mode.', error);
+      setDetailNotice('수정 모드로 전환하지 못했습니다.');
+    }
+  };
+
   const createExcelForAction = async () => createEvaluationExcelBlob({
     projectInfo,
     answers,
     notes,
     totalScore: scores.totalScore,
   });
-
-  const saveCurrentEvaluation = async () => {
-    if (isSavingEvaluation) return;
-    if (!validateEvaluation('저장')) return;
-
-    setIsSavingEvaluation(true);
-    setNotice('저장 중...');
-
-    const now = new Date().toISOString();
-    const existingEvaluation = currentEvaluationId
-      ? evaluations.find((evaluation) => evaluation.id === currentEvaluationId)
-      : null;
-    const evaluation = {
-      id: currentEvaluationId || createEvaluationId(),
-      createdAt: existingEvaluation?.createdAt || now,
-      updatedAt: now,
-      projectInfo,
-      evaluationResults: answers,
-      evaluationNotes: notes,
-      basicScore: scores.basicScore,
-      adjustmentScore: scores.adjustmentScore,
-      totalScore: scores.totalScore,
-    };
-
-    try {
-      const savedEvaluation = await saveEvaluation(evaluation);
-      setCurrentEvaluationId(savedEvaluation.id);
-      setNotice('평가가 저장되었습니다.');
-      const nextEvaluations = await loadEvaluationHistory();
-      setSelectedEvaluation(nextEvaluations.find((item) => item.id === savedEvaluation.id) ?? savedEvaluation);
-    } catch (error) {
-      console.error('Failed to save evaluation.', error);
-      setNotice('평가 저장 중 오류가 발생했습니다. 다시 시도해주세요.');
-    } finally {
-      setIsSavingEvaluation(false);
-    }
-  };
 
   const shareOrDownloadEvaluationExcel = async () => {
     if (!validateEvaluation('Excel을 생성')) return;
@@ -516,10 +838,8 @@ export default function App() {
     setNotice('평가표 생성 중...');
     setMailFallback(null);
 
-    let excel;
-
     try {
-      excel = await createExcelForAction();
+      const excel = await createExcelForAction();
       let excelFile;
 
       try {
@@ -546,6 +866,12 @@ export default function App() {
         projectInfo,
         totalScore: scores.totalScore,
       });
+
+      if (currentEvaluationId) {
+        const generatedAt = new Date().toISOString();
+        await saveEvaluation(buildTaskRecord({ lastExcelGeneratedAt: generatedAt }));
+        await loadTaskList();
+      }
 
       if (shareResult.status === 'shared') {
         setNotice('공유 메뉴를 열었습니다.');
@@ -584,13 +910,13 @@ export default function App() {
   };
 
   const shareStoredEvaluationExcel = async () => {
-    if (!selectedEvaluation) return;
+    if (!selectedTask) return;
 
     setDetailAction('share');
     setDetailNotice('평가표 생성 중...');
 
     try {
-      const excel = await createEvaluationExcelBlobFromEvaluation(selectedEvaluation);
+      const excel = await createEvaluationExcelBlobFromEvaluation(selectedTask);
 
       let excelFile;
       try {
@@ -604,9 +930,18 @@ export default function App() {
 
       const shareResult = await tryShareExcel({
         file: excelFile,
-        projectInfo: selectedEvaluation.projectInfo,
-        totalScore: selectedEvaluation.totalScore,
+        projectInfo: selectedTask.projectInfo,
+        totalScore: selectedTask.totalScore,
       });
+
+      const updatedTask = {
+        ...selectedTask,
+        lastExcelGeneratedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      await saveEvaluation(updatedTask);
+      setSelectedTask(updatedTask);
+      await loadTaskList();
 
       if (shareResult.status === 'shared') {
         setDetailNotice('공유 메뉴를 열었습니다.');
@@ -630,58 +965,50 @@ export default function App() {
     }
   };
 
-  const openStoredEvaluation = (evaluation) => {
-    setSelectedEvaluation(evaluation);
-    setDetailNotice('');
-    setActiveView('detail');
-  };
+  const deleteSelectedTask = async () => {
+    if (!selectedTask) return;
 
-  const editStoredEvaluation = () => {
-    if (!selectedEvaluation) return;
-
-    setCurrentEvaluationId(selectedEvaluation.id);
-    setProjectInfo({
-      ...initialProjectInfo,
-      ...(selectedEvaluation.projectInfo ?? {}),
-    });
-    setAnswers(selectedEvaluation.evaluationResults ?? {});
-    setNotes(selectedEvaluation.evaluationNotes ?? {});
-    setIsProjectInfoOpen(true);
-    setOpenSections(initialOpenSections);
-    setMailFallback(null);
-    setNotice('저장된 평가 수정 중입니다.');
-    setActiveView('edit');
-  };
-
-  const deleteStoredEvaluation = async () => {
-    if (!selectedEvaluation) return;
-
-    const confirmed = window.confirm('이 평가 결과를 삭제하시겠습니까?\n\n삭제된 데이터는 복구할 수 없습니다.');
+    const confirmed = window.confirm('이 작업을 삭제하시겠습니까?\n\n작성한 평가 내용도 함께 삭제됩니다.');
     if (!confirmed) return;
 
     try {
-      await deleteEvaluation(selectedEvaluation.id);
-      if (currentEvaluationId === selectedEvaluation.id) {
+      await deleteEvaluation(selectedTask.id);
+      if (currentEvaluationId === selectedTask.id) {
         setCurrentEvaluationId('');
       }
-      setSelectedEvaluation(null);
-      await loadEvaluationHistory();
+      setSelectedTask(null);
+      await loadTaskList();
       setActiveView('history');
-      setNotice('평가 결과가 삭제되었습니다.');
+      setNotice('작업이 삭제되었습니다.');
     } catch (error) {
-      console.error('Failed to delete evaluation.', error);
-      setDetailNotice('평가 삭제 중 오류가 발생했습니다. 다시 시도해주세요.');
+      console.error('Failed to delete task.', error);
+      setDetailNotice('작업 삭제 중 오류가 발생했습니다. 다시 시도해주세요.');
+    }
+  };
+
+  const deleteTaskFromList = async (task) => {
+    const confirmed = window.confirm('이 작업을 삭제하시겠습니까?\n\n작성한 평가 내용도 함께 삭제됩니다.');
+    if (!confirmed) return;
+
+    try {
+      await deleteEvaluation(task.id);
+      if (currentEvaluationId === task.id) {
+        setCurrentEvaluationId('');
+      }
+      if (selectedTask?.id === task.id) {
+        setSelectedTask(null);
+      }
+      await loadTaskList();
+      setNotice('작업이 삭제되었습니다.');
+    } catch (error) {
+      console.error('Failed to delete task.', error);
+      setNotice('작업 삭제 중 오류가 발생했습니다.');
     }
   };
 
   const openMailComposer = () => {
     if (!mailFallback?.mailtoHref) return;
     window.location.href = mailFallback.mailtoHref;
-  };
-
-  const openHistory = () => {
-    loadEvaluationHistory();
-    setActiveView('history');
   };
 
   return (
@@ -692,49 +1019,40 @@ export default function App() {
           <h1>시공평가</h1>
         </div>
         <div className="header-actions" aria-label="주요 작업">
-          <button
-            type="button"
-            className="header-action-save"
-            onClick={saveCurrentEvaluation}
-            disabled={activeView !== 'edit' || isSavingEvaluation}
-          >
-            <AppIcon name="clipboard" />
-            <span>{isSavingEvaluation ? '저장 중' : '평가 저장'}</span>
-          </button>
-          <button
-            type="button"
-            className={`header-action ${activeView === 'edit' ? 'active' : ''}`}
-            onClick={() => setActiveView('edit')}
-          >
-            <AppIcon name="edit" />
-            <span>평가 작성</span>
-          </button>
-          <button
-            type="button"
-            className={`header-action ${activeView === 'history' || activeView === 'detail' ? 'active' : ''}`}
-            onClick={openHistory}
-          >
-            <AppIcon name="list" />
-            <span>평가 리스트</span>
-          </button>
-          {activeView === 'detail' && selectedEvaluation && (
+          {activeView !== 'history' && (
+            <button type="button" className="header-action" onClick={returnToTaskList}>
+              <AppIcon name="arrowLeft" />
+              <span>작업 리스트</span>
+            </button>
+          )}
+          {activeView !== 'history' && (
             <button
               type="button"
-              className="header-action header-action-edit"
-              onClick={editStoredEvaluation}
+              className="header-action header-action-new"
+              onClick={createNewTask}
             >
+              <AppIcon name="play" />
+              <span>새 작업</span>
+            </button>
+          )}
+          {activeView === 'edit' && (
+            <button type="button" className="header-action header-action-save" onClick={saveCurrentTask}>
+              <AppIcon name="clipboard" />
+              <span>저장하기</span>
+            </button>
+          )}
+          {activeView === 'edit' && (
+            <button type="button" className="header-action header-action-edit" onClick={completeTask}>
+              <AppIcon name="userCheck" />
+              <span>평가 완료</span>
+            </button>
+          )}
+          {activeView === 'detail' && selectedTask && (
+            <button type="button" className="header-action header-action-edit" onClick={editCompletedTask}>
               <AppIcon name="edit" />
               <span>수정하기</span>
             </button>
           )}
-          <button
-            type="button"
-            className="header-action"
-            onClick={startNewEvaluation}
-          >
-            <AppIcon name="reset" />
-            <span>초기화</span>
-          </button>
           <button
             type="button"
             className="theme-toggle"
@@ -748,14 +1066,46 @@ export default function App() {
       </header>
 
       <main>
+        {activeView === 'history' && (
+          <>
+            {notice && <p className="notice">{notice}</p>}
+            <TaskList
+              tasks={tasks}
+              isLoading={isHistoryLoading}
+              searchTerm={taskSearch}
+              activeFilter={taskFilter}
+              onFilterChange={setTaskFilter}
+              onSearchChange={setTaskSearch}
+              onOpenTask={openTask}
+              onNewTask={createNewTask}
+              onDeleteTask={deleteTaskFromList}
+            />
+          </>
+        )}
+
+        {activeView === 'project' && (
+          <ProjectSetup
+            projectInfo={projectInfo}
+            saveStateText={saveStateText || '작업 리스트에 자동저장됩니다.'}
+            onProjectInfoChange={updateProjectInfo}
+            onBack={returnToTaskList}
+            onStartEvaluation={startEvaluation}
+          />
+        )}
+
         {activeView === 'edit' && (
           <>
-            {currentEvaluationId && (
-              <div className="edit-status">
-                <AppIcon name="edit" />
-                <span>저장된 평가 수정 중</span>
+            <div className="edit-context">
+              <button type="button" className="back-button" onClick={returnToTaskList}>
+                <AppIcon name="arrowLeft" />
+                작업 리스트
+              </button>
+              <div>
+                <span>{statusLabels[currentStatus] ?? '작성 중'}</span>
+                <strong>{projectInfo.projectName || '공사명 미입력'}</strong>
+                <small>{saveStateText || formatSavedAt(lastSavedAt) || '자동저장 대기 중'}</small>
               </div>
-            )}
+            </div>
 
             <section className="project-accordion">
               <button
@@ -780,7 +1130,7 @@ export default function App() {
               </button>
               {isProjectInfoOpen && (
                 <div id="project-info-panel">
-                  <ProjectInfoForm value={projectInfo} onChange={handleProjectInfoChange} />
+                  <ProjectInfoForm value={projectInfo} onChange={updateProjectInfo} />
                 </div>
               )}
             </section>
@@ -817,42 +1167,27 @@ export default function App() {
                   <small>{mailFallback.fileName}</small>
                 </div>
               )}
-              <button
-                type="button"
-                className="primary-button"
-                onClick={shareOrDownloadEvaluationExcel}
-                disabled={Boolean(excelAction)}
-              >
-                <span className="button-icon"><AppIcon name="share" /></span>
+              <button type="button" className="primary-button" onClick={completeTask}>
+                <span className="button-icon"><AppIcon name="clipboard" /></span>
                 <span>
-                  <strong>{excelAction === 'share' ? '평가표 생성 중...' : 'Excel 생성 및 공유'}</strong>
-                  <small>Android 공유창으로 메일 앱에 전달</small>
+                  <strong>평가 완료</strong>
+                  <small>완료 후 Excel 생성 화면으로 이동</small>
                 </span>
               </button>
             </div>
           </>
         )}
 
-        {activeView === 'history' && (
-          <EvaluationList
-            evaluations={evaluations}
-            isLoading={isHistoryLoading}
-            searchTerm={historySearch}
-            onSearchChange={setHistorySearch}
-            onOpenEvaluation={openStoredEvaluation}
-            onNewEvaluation={() => setActiveView('edit')}
-          />
-        )}
-
         {activeView === 'detail' && (
           <EvaluationDetail
-            evaluation={selectedEvaluation}
+            task={selectedTask}
             groupedItems={groupedItems}
             detailNotice={detailNotice}
             detailAction={detailAction}
-            onBack={openHistory}
+            onBack={returnToTaskList}
             onShare={shareStoredEvaluationExcel}
-            onDelete={deleteStoredEvaluation}
+            onEdit={editCompletedTask}
+            onDelete={deleteSelectedTask}
           />
         )}
       </main>

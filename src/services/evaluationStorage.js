@@ -2,6 +2,14 @@ export const EVALUATION_DB_NAME = 'constructionEvaluationHistory';
 export const EVALUATION_DB_VERSION = 1;
 export const EVALUATION_STORE_NAME = 'evaluations';
 
+export const TASK_STATUSES = {
+  NEW: 'new',
+  IN_PROGRESS: 'in_progress',
+  DRAFT: 'draft',
+  COMPLETED: 'completed',
+  EDITING: 'editing',
+};
+
 let dbPromise;
 
 function openEvaluationDb() {
@@ -49,6 +57,10 @@ function normalizeText(value) {
   return String(value ?? '');
 }
 
+function normalizeStatus(value) {
+  return Object.values(TASK_STATUSES).includes(value) ? value : TASK_STATUSES.COMPLETED;
+}
+
 export function normalizeEvaluationRecord(record) {
   if (!record || typeof record !== 'object' || !record.id) return null;
 
@@ -64,14 +76,19 @@ export function normalizeEvaluationRecord(record) {
 
   return {
     id: normalizeText(record.id),
+    status: normalizeStatus(record.status),
     createdAt: normalizeText(record.createdAt),
     updatedAt: normalizeText(record.updatedAt || record.createdAt),
+    completedAt: normalizeText(record.completedAt),
+    lastExcelGeneratedAt: normalizeText(record.lastExcelGeneratedAt),
     projectInfo,
     evaluationResults,
     evaluationNotes,
     basicScore: Number(record.basicScore) || 0,
     adjustmentScore: Number(record.adjustmentScore) || 0,
     totalScore: Number(record.totalScore) || 0,
+    completedCount: Number(record.completedCount) || 0,
+    totalCount: Number(record.totalCount) || 30,
   };
 }
 
