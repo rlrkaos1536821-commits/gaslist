@@ -1,10 +1,12 @@
 export const DRAFT_STORAGE_KEY = 'constructionEvaluationDraft';
 
-export function saveDraft({ projectInfo, evaluationResults }) {
+export function saveDraft({ currentEvaluationId = '', projectInfo, evaluationResults, evaluationNotes = {} }) {
   const lastSavedAt = new Date().toISOString();
   const draft = {
+    currentEvaluationId,
     projectInfo,
     evaluationResults,
+    evaluationNotes,
     lastSavedAt,
   };
 
@@ -19,10 +21,15 @@ export function loadDraft() {
 
     const draft = JSON.parse(rawDraft);
     return {
+      currentEvaluationId: draft.currentEvaluationId || '',
       projectInfo: draft.projectInfo && typeof draft.projectInfo === 'object' ? draft.projectInfo : {},
       evaluationResults:
         draft.evaluationResults && typeof draft.evaluationResults === 'object'
           ? draft.evaluationResults
+          : {},
+      evaluationNotes:
+        draft.evaluationNotes && typeof draft.evaluationNotes === 'object'
+          ? draft.evaluationNotes
           : {},
       lastSavedAt: draft.lastSavedAt || '',
     };

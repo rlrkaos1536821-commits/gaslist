@@ -26,7 +26,22 @@ const sectionMeta = {
   },
 };
 
-export default function EvaluationSection({ title, items, answers, getScore, onAnswerChange, isOpen, onToggle }) {
+export default function EvaluationSection({
+  title,
+  items,
+  answers,
+  notes,
+  getScore,
+  photosByItem = {},
+  photoProcessing = {},
+  onAnswerChange,
+  onNoteChange,
+  onAddPhotos,
+  onPreviewPhoto,
+  onDeletePhoto,
+  isOpen,
+  onToggle,
+}) {
   const answeredCount = items.filter((item) => answers[item.id] !== undefined && answers[item.id] !== '').length;
   const sectionScore = items.reduce((sum, item) => sum + getScore(item), 0);
   const maxScore = items.reduce((sum, item) => sum + (item.scoreType === 'adjustment' ? 0 : item.maxScore), 0);
@@ -66,8 +81,16 @@ export default function EvaluationSection({ title, items, answers, getScore, onA
               key={item.id}
               item={item}
               answer={answers[item.id]}
+              note={notes[item.id] ?? ''}
               score={getScore(item)}
+              photos={photosByItem[item.id] ?? []}
+              isPhotoProcessing={Boolean(photoProcessing[item.id])}
+              photoProcessingText={photoProcessing[item.id] ?? ''}
               onChange={onAnswerChange}
+              onNoteChange={onNoteChange}
+              onAddPhotos={onAddPhotos}
+              onPreviewPhoto={onPreviewPhoto}
+              onDeletePhoto={onDeletePhoto}
             />
           ))}
         </div>

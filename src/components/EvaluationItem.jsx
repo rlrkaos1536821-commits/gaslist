@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import AppIcon from './AppIcon.jsx';
+import EvaluationPhotoSection from './EvaluationPhotoSection.jsx';
 
 function getScoreTone(item, value) {
   if (value === undefined || value === '') return 'neutral';
@@ -15,7 +16,20 @@ function getScoreTone(item, value) {
   return 'middle';
 }
 
-export default function EvaluationItem({ item, answer, score, onChange }) {
+export default function EvaluationItem({
+  item,
+  answer,
+  note,
+  score,
+  photos = [],
+  isPhotoProcessing = false,
+  photoProcessingText = '',
+  onChange,
+  onNoteChange,
+  onAddPhotos,
+  onPreviewPhoto,
+  onDeletePhoto,
+}) {
   const [isNumberPickerOpen, setIsNumberPickerOpen] = useState(false);
   const selectedNumberRef = useRef(null);
   const numberOptions = useMemo(() => Array.from({ length: 101 }, (_, index) => index), []);
@@ -39,7 +53,7 @@ export default function EvaluationItem({ item, answer, score, onChange }) {
   return (
     <article
       id={`item-${item.id}`}
-      className={`evaluation-card ${isAnswered ? 'is-answered' : 'is-unanswered'} tone-${cardTone}`}
+      className={`evaluation-card ${isAnswered ? 'is-answered' : 'is-unanswered'} ${isNumberPickerOpen ? 'is-number-picker-open' : ''} tone-${cardTone}`}
     >
       <div className="item-header">
         <div>
@@ -69,7 +83,8 @@ export default function EvaluationItem({ item, answer, score, onChange }) {
                   type="radio"
                   name={item.id}
                   checked={selected}
-                  onChange={() => onChange(item, option.label)}
+                  onClick={() => onChange(item, selected ? '' : option.label)}
+                  onChange={() => {}}
                 />
                 <span>{option.label}</span>
                 <strong>{option.score}점</strong>
@@ -80,11 +95,12 @@ export default function EvaluationItem({ item, answer, score, onChange }) {
       ) : (
         <div className={`number-input tone-${cardTone}`}>
           <span>{item.placeholder}</span>
-          <div>
+          <div className="number-input-control">
             <button
               type="button"
               className={`number-picker-trigger ${isAnswered ? 'has-value' : ''}`}
-              onClick={() => setIsNumberPickerOpen(true)}
+              onClick={() => setIsNumberPickerOpen((current) => !current)}
+              aria-expanded={isNumberPickerOpen}
               aria-label={`${item.placeholder} 선택`}
             >
               <strong>{isAnswered ? selectedNumber : '선택'}</strong>
@@ -93,50 +109,62 @@ export default function EvaluationItem({ item, answer, score, onChange }) {
             <em>{item.unit}</em>
           </div>
           {isNumberPickerOpen && (
-            <div className="number-picker-backdrop" onClick={() => setIsNumberPickerOpen(false)}>
-              <div
-                className="number-picker"
-                role="dialog"
-                aria-modal="true"
-                aria-label={`${item.placeholder} 선택`}
-                onClick={(event) => event.stopPropagation()}
-              >
-                <div className="number-picker-header">
-                  <div>
-                    <span>{item.excelCell}</span>
-                    <strong>{item.placeholder} 선택</strong>
-                  </div>
-                  <button type="button" onClick={() => setIsNumberPickerOpen(false)} aria-label="선택창 닫기">
-                    <AppIcon name="x" />
-                  </button>
-                </div>
-                <div className="number-picker-list">
-                  {numberOptions.map((value) => {
-                    const selected = selectedNumber === value;
-                    return (
-                      <button
-                        key={value}
-                        ref={selected ? selectedNumberRef : null}
-                        type="button"
-                        className={selected ? 'selected' : ''}
-                        onClick={() => selectNumber(value)}
-                      >
-                        <span>{value}</span>
-                        <em>{item.unit}</em>
-                      </button>
-                    );
-                  })}
-                </div>
+            <div
+              className="number-picker"
+              role="listbox"
+              aria-label={`${item.placeholder} 선택`}
+            >
+              <div className="number-picker-header">
+                <span>{item.excelCell}</span>
+                <strong>{item.placeholder} 선택</strong>
+              </div>
+              <div className="number-picker-list">
+                {numberOptions.map((value) => {
+                  const selected = selectedNumber === value;
+                  return (
+                    <button
+                      key={value}
+                      ref={selected ? selectedNumberRef : null}
+                      type="button"
+                      role="option"
+                      aria-selected={selected}
+                      className={selected ? 'selected' : ''}
+                      onClick={() => selectNumber(value)}
+                    >
+                      <span>{value}</span>
+                      <em>{item.unit}</em>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
         </div>
       )}
 
+      <EvaluationPhotoSection
+        item={item}
+        photos={photos}
+        isProcessing={isPhotoProcessing}
+        processingText={photoProcessingText}
+        onAddPhotos={onAddPhotos}
+        onPreviewPhoto={onPreviewPhoto}
+        onDeletePhoto={onDeletePhoto}
+      />
+
       <div className="item-score">
         <span>{isAnswered ? '계산점수' : '미평가'}</span>
         <strong>{isAnswered ? `${score}점` : '-'}</strong>
       </div>
+
+      <label className="item-note">
+        <textarea
+          value={note}
+          rows="2"
+          placeholder="평가사유 입력"
+          onChange={(event) => onNoteChange(item, event.target.value)}
+        />
+      </label>
     </article>
   );
 }
