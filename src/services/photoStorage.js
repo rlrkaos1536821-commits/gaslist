@@ -5,7 +5,7 @@ import {
   PHOTO_STORE_NAME,
 } from './evaluationStorage.js';
 
-export const MAX_PHOTOS_PER_ITEM = 3;
+export const MAX_PHOTOS_PER_ITEM = 30;
 
 let photoDbPromise;
 
